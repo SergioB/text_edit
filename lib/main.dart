@@ -2,11 +2,39 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
 import 'dart:convert';
 
-void main() {
+void main() async {
+  // Ensure Flutter bindings are initialized
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize window manager
+  await windowManager.ensureInitialized();
+
+  // Set window minimum size
+  await windowManager.setMinimumSize(const Size(800, 600));
+
+  // Load saved window bounds
+  final prefs = await SharedPreferences.getInstance();
+  final savedBounds = prefs.getString('window_bounds');
+  if (savedBounds != null) {
+    final bounds = json.decode(savedBounds);
+    await windowManager.setBounds(Rect.fromLTWH(
+      bounds['x'] ?? 0.0,
+      bounds['y'] ?? 0.0,
+      bounds['width'] ?? 800.0,
+      bounds['height'] ?? 600.0,
+    ));
+  } else {
+    // Default window size if no saved bounds
+    await windowManager.setSize(const Size(1024, 768));
+    await windowManager.center();
+  }
+
   runApp(const MyApp());
 }
+
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -24,7 +52,6 @@ class MyApp extends StatelessWidget {
         primarySwatch: Colors.blue,
         useMaterial3: true,
         brightness: Brightness.dark,
-        // Customize dark theme colors
         scaffoldBackgroundColor: const Color(0xFF121212),
         cardColor: const Color(0xFF1E1E1E),
         dividerColor: Colors.grey[800],
@@ -32,11 +59,64 @@ class MyApp extends StatelessWidget {
           bodyMedium: TextStyle(color: Colors.white70),
         ),
       ),
-      // This will make the app follow the system theme
       themeMode: ThemeMode.system,
-      home: const TextEditorScreen(),
+      home: const WindowBoundsHandler(child: TextEditorScreen()),
     );
   }
+}
+
+// Add this new widget to handle window bounds
+class WindowBoundsHandler extends StatefulWidget {
+  final Widget child;
+
+  const WindowBoundsHandler({super.key, required this.child});
+
+  @override
+  State<WindowBoundsHandler> createState() => _WindowBoundsHandlerState();
+}
+
+class _WindowBoundsHandlerState extends State<WindowBoundsHandler> with WindowListener {
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowClose() async {
+    await _saveWindowBounds();
+    await windowManager.destroy();
+  }
+
+  @override
+  void onWindowResized() async {
+    await _saveWindowBounds();
+  }
+
+  @override
+  void onWindowMoved() async {
+    await _saveWindowBounds();
+  }
+
+  Future<void> _saveWindowBounds() async {
+    final bounds = await windowManager.getBounds();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('window_bounds', json.encode({
+      'x': bounds.left,
+      'y': bounds.top,
+      'width': bounds.width,
+      'height': bounds.height,
+    }));
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class Topic {
