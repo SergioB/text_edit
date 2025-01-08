@@ -18,7 +18,22 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
+        brightness: Brightness.light,
       ),
+      darkTheme: ThemeData(
+        primarySwatch: Colors.blue,
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        // Customize dark theme colors
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        cardColor: const Color(0xFF1E1E1E),
+        dividerColor: Colors.grey[800],
+        textTheme: const TextTheme(
+          bodyMedium: TextStyle(color: Colors.white70),
+        ),
+      ),
+      // This will make the app follow the system theme
+      themeMode: ThemeMode.system,
       home: const TextEditorScreen(),
     );
   }
@@ -266,9 +281,15 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Get the current brightness
+    final brightness = Theme.of(context).brightness;
+    final isDark = brightness == Brightness.dark;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Multi-Topic Text Editor'),
+        // In dark mode, make the AppBar slightly lighter than the background
+        backgroundColor: isDark ? const Color(0xFF1E1E1E) : null,
         actions: [
           IconButton(
             icon: const Icon(Icons.save),
@@ -309,6 +330,8 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                       return ListTile(
                         title: Text(topic.title),
                         selected: _selectedTopic == topic,
+                        // Customize selected tile color based on theme
+                        selectedTileColor: isDark ? Colors.blue.withOpacity(0.2) : Colors.blue.withOpacity(0.1),
                         trailing: IconButton(
                           icon: const Icon(Icons.delete),
                           onPressed: () => _deleteTopic(topic),
@@ -339,8 +362,14 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                   hintText: _selectedTopic == null
                       ? 'Select a topic to start editing...'
                       : 'Start typing...',
+                  // Use theme-aware colors for the TextField
+                  fillColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                  filled: true,
                 ),
-                style: const TextStyle(fontSize: 16),
+                style: TextStyle(
+                  fontSize: 16,
+                  color: isDark ? Colors.white70 : Colors.black87,
+                ),
                 onChanged: (value) {
                   if (_selectedTopic != null) {
                     _selectedTopic!.currentContent = value;
@@ -354,7 +383,6 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
       ),
     );
   }
-
   @override
   void dispose() {
     _controller.dispose();
