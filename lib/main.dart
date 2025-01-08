@@ -56,6 +56,9 @@ class TextEditorScreen extends StatefulWidget {
 }
 
 class _TextEditorScreenState extends State<TextEditorScreen> {
+  static const String TOPICS_KEY = 'topics';
+  static const String LAST_SELECTED_TOPIC_KEY = 'last_selected_topic';
+
   final TextEditingController _controller = TextEditingController();
   final TextEditingController _newTopicController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
@@ -73,10 +76,31 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
   void _initializePrefs() async {
     _prefs = await SharedPreferences.getInstance();
     _loadTopics();
+    _loadLastSelectedTopic();
+  }
+
+  void _saveLastSelectedTopic() {
+    if (_selectedTopic != null) {
+      _prefs?.setString(LAST_SELECTED_TOPIC_KEY, _selectedTopic!.title);
+    }
+  }
+
+  void _loadLastSelectedTopic() {
+    final lastTopicTitle = _prefs?.getString(LAST_SELECTED_TOPIC_KEY);
+    if (lastTopicTitle != null) {
+      final topic = _topics.firstWhere(
+            (t) => t.title == lastTopicTitle,
+        orElse: () => _topics.isEmpty ? Topic(title: '') : _topics.first,
+      );
+      setState(() {
+        _selectedTopic = topic;
+        _controller.text = topic.currentContent;
+      });
+    }
   }
 
   void _loadTopics() {
-    final topicsJson = _prefs?.getString('topics');
+    final topicsJson = _prefs?.getString(TOPICS_KEY);
     if (topicsJson != null) {
       final List<dynamic> decoded = json.decode(topicsJson);
       setState(() {
@@ -87,7 +111,8 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
 
   void _saveTopics() {
     final topicsJson = json.encode(_topics.map((t) => t.toJson()).toList());
-    _prefs?.setString('topics', topicsJson);
+    _prefs?.setString(TOPICS_KEY, topicsJson);
+    _saveLastSelectedTopic();
   }
 
   void _setupKeyboardListeners() {
@@ -226,6 +251,7 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                 if (_selectedTopic == topic) {
                   _selectedTopic = null;
                   _controller.clear();
+                  _prefs?.remove(LAST_SELECTED_TOPIC_KEY);
                 }
                 _saveTopics();
               });
@@ -258,7 +284,6 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
       ),
       body: Row(
         children: [
-          // Topics sidebar
           Container(
             width: 250,
             decoration: BoxDecoration(
@@ -292,6 +317,7 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                           setState(() {
                             _selectedTopic = topic;
                             _controller.text = topic.currentContent;
+                            _saveLastSelectedTopic();
                           });
                         },
                       );
@@ -301,7 +327,6 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
               ],
             ),
           ),
-          // Text editor
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(16.0),
