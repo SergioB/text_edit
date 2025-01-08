@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import 'dart:convert';
 
@@ -54,12 +55,57 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
   final FocusNode _focusNode = FocusNode();
   List<FileData> _versions = [];
   String? _currentFilePath;
+  SharedPreferences? _prefs;
 
   @override
   void initState() {
     super.initState();
     _setupKeyboardListeners();
+    _initializePreferences();
   }
+
+  Future<void> _initializePreferences() async {
+    _prefs = await SharedPreferences.getInstance();
+    final lastFilePath = _prefs?.getString('lastFilePath');
+    final lastTimestamp = _prefs?.getString('lastTimestamp');
+
+    if (lastFilePath != null) {
+      final file = File(lastFilePath);
+      if (await file.exists()) {
+        try {
+          await _loadFile(file);
+          // Only try to load specific version if we have versions loaded
+          if (lastTimestamp != null && _versions.isNotEmpty) {
+            final targetTimestamp = DateTime.parse(lastTimestamp);
+            _loadSpecificVersion(targetTimestamp);
+          }
+        } catch (e) {
+          debugPrint('Error loading last file: $e');
+          // Clear invalid preferences
+          await _prefs?.remove('lastFilePath');
+          await _prefs?.remove('lastTimestamp');
+        }
+      } else {
+        // Clear preferences if file doesn't exist
+        await _prefs?.remove('lastFilePath');
+        await _prefs?.remove('lastTimestamp');
+      }
+    }
+  }
+
+  void _loadSpecificVersion(DateTime targetTimestamp) {
+    if (_versions.isEmpty) {
+      return; // Don't do anything if there are no versions
+    }
+
+    final targetVersion = _versions.lastWhere(
+          (version) => version.timestamp.isBefore(targetTimestamp) ||
+          version.timestamp.isAtSameMomentAs(targetTimestamp),
+      orElse: () => _versions.last,
+    );
+    _controller.text = targetVersion.content;
+  }
+
 
   void _setupKeyboardListeners() {
     _focusNode.onKeyEvent = (node, event) {
@@ -93,26 +139,41 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
     final result = await FilePicker.platform.pickFiles();
     if (result != null) {
       final file = File(result.files.single.path!);
-      try {
-        final content = await file.readAsString();
-        final data = json.decode(content);
-        setState(() {
-          _currentFilePath = file.path;
-          _versions = (data as List)
-              .map((v) => FileData.fromJson(v as Map<String, dynamic>))
-              .toList();
-          if (_versions.isNotEmpty) {
-            _controller.text = _versions.last.content;
-          }
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File loaded successfully')),
-        );
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Error loading file')),
-        );
+      await _loadFile(file);
+    }
+  }
+
+  Future<void> _loadFile(File file) async {
+    try {
+      final content = await file.readAsString();
+      final data = json.decode(content);
+
+      final newVersions = (data as List)
+          .map((v) => FileData.fromJson(v as Map<String, dynamic>))
+          .toList();
+
+      setState(() {
+        _currentFilePath = file.path;
+        _versions = newVersions;
+        if (_versions.isNotEmpty) {
+          _controller.text = _versions.last.content;
+        }
+      });
+
+      // Save the current file path to preferences
+      await _prefs?.setString('lastFilePath', file.path);
+      if (_versions.isNotEmpty) {
+        await _prefs?.setString('lastTimestamp', _versions.last.timestamp.toIso8601String());
       }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('File loaded successfully')),
+      );
+    } catch (e) {
+      debugPrint('Error loading file: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading file: ${e.toString()}')),
+      );
     }
   }
 
@@ -145,6 +206,10 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
       await file.writeAsString(json.encode(
         _versions.map((v) => v.toJson()).toList(),
       ));
+
+      // Save the current timestamp to preferences
+      await _prefs?.setString('lastTimestamp', timestamp.toIso8601String());
+      await _prefs?.setString('lastFilePath', _currentFilePath!);
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(
@@ -186,8 +251,10 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                       ? '${version.content.substring(0, 50)}...'
                       : version.content,
                 ),
-                onTap: () {
+                onTap: () async {
                   _controller.text = version.content;
+                  // Save the selected version timestamp
+                  await _prefs?.setString('lastTimestamp', version.timestamp.toIso8601String());
                   Navigator.pop(context);
                 },
               );
