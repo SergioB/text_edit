@@ -1,5 +1,5 @@
 # text_edit
 
-a versioned text editor
+a versioned note application with topics, for desktop and mobile,
 
 
